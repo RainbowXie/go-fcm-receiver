@@ -1,6 +1,7 @@
 package go_fcm_receiver
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/tls"
@@ -11,6 +12,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // FCMClient structure
@@ -42,6 +45,9 @@ type AndroidFCM struct {
 	GcmSenderId        string
 	AndroidPackage     string
 	AndroidPackageCert string
+	FirebaseFID        string
+	AppVer             string
+	AppVerName         string
 }
 
 func (f *FCMClient) RemovePersistentId(id string) {

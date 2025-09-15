@@ -7,18 +7,22 @@ import (
 )
 
 func (f *FCMClient) registerFCM() error {
-	installationToken, err := f.installRequest()
+	installResponse, err := f.installRequest()
 	if err != nil {
 		return err
 	}
-	f.InstallationAuthToken = &installationToken
+
+	f.InstallationAuthToken = &installResponse.AuthToken.Token
 	if f.AndroidApp == nil {
 		token, err := f.registerRequest()
 		if err != nil {
 			return err
 		}
 		f.FcmToken = token
+	} else {
+		f.AndroidApp.FirebaseFID = installResponse.FirebaseFID
 	}
+
 	return nil
 }
 
@@ -34,13 +38,14 @@ func (f *FCMClient) GetAuthSecretBase64() string {
 	return base64.StdEncoding.EncodeToString(f.authSecret)
 }
 
-func (f *FCMClient) installRequest() (string, error) {
+func (f *FCMClient) installRequest() (*FCMInstallationResponse, error) {
 	installResponse, err := f.SendFCMInstallRequest()
 	if err != nil {
 		err = errors.New(fmt.Sprintf("failed to install to the FCM: %s", err.Error()))
-		return "", err
+		return nil, err
 	}
-	return installResponse.AuthToken.Token, nil
+
+	return installResponse, nil
 }
 
 func (f *FCMClient) registerRequest() (string, error) {

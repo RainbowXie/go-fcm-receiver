@@ -2,6 +2,7 @@ package go_fcm_receiver
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -24,7 +25,8 @@ type AuthToken struct {
 }
 
 type FCMInstallationResponse struct {
-	AuthToken AuthToken `json:"authToken"`
+	AuthToken   AuthToken `json:"authToken"`
+	FirebaseFID string    `json:"fid"`
 }
 
 type FCMRegisterResponse struct {
@@ -72,33 +74,39 @@ func (f *FCMClient) SendGCMCheckInRequest(requestBody *AndroidCheckinRequest) (*
 // SendGCMRegisterRequest GCM Register Request
 func (f *FCMClient) SendGCMRegisterRequest() (string, error) {
 	values := url.Values{}
-
+	CommonRegisterUrl := ""
 	if f.AndroidApp == nil || f.InstallationAuthToken == nil {
+		CommonRegisterUrl = RegisterUrl
+
 		values.Add("X-subtype", f.AppId)
 		values.Add("app", "org.chromium.linux")
 		values.Add("device", strconv.FormatUint(f.AndroidId, 10))
 		values.Add("sender", base64.RawURLEncoding.EncodeToString(FcmServerKey))
 	} else {
+		CommonRegisterUrl = Register3Url
+
 		values.Add("X-subtype", f.AndroidApp.GcmSenderId)
 		values.Add("device", strconv.FormatUint(f.AndroidId, 10))
 		values.Add("app", f.AndroidApp.AndroidPackage)
 		values.Add("cert", f.AndroidApp.AndroidPackageCert)
-		values.Add("app_ver", "1")
-		values.Add("X-app_ver", "1")
-		values.Add("X-osv", "29")
-		values.Add("X-cliv", "fiid-21.1.1")
-		values.Add("X-gmsv", "220217001")
+		values.Add("app_ver", f.AndroidApp.AppVer)
+		values.Add("X-app_ver", f.AndroidApp.AppVer)
+		values.Add("X-app_ver_name", f.AndroidApp.AppVerName)
+		values.Add("X-osv", "35")
+		values.Add("X-cliv", "fcm-23.4.1")
+		values.Add("X-gmsv", "253434035")
+		values.Add("gcm_ver", "253434035")
 		values.Add("X-scope", "*")
 		values.Add("X-Goog-Firebase-Installations-Auth", *f.InstallationAuthToken)
-		values.Add("X-gms_app_id", f.AppId)
-		values.Add("X-Firebase-Client", "android-min-sdk/23 fire-core/20.0.0 device-name/a21snnxx device-brand/samsung device-model/a21s android-installer/com.android.vending fire-android/30 fire-installations/17.0.0 fire-fcm/22.0.0 android-platform/ kotlin/1.9.23 android-target-sdk/34")
-		values.Add("X-Firebase-Client-Log-Type", "1")
-		values.Add("X-app_ver_name", "1")
-		values.Add("target_ver", "31")
+		values.Add("X-gmp_app_id", f.AppId)
+		values.Add("X-appid", f.AndroidApp.FirebaseFID)
+		values.Add("target_ver", "35")
 		values.Add("sender", f.AndroidApp.GcmSenderId)
+		values.Add("plat", "0")
+		values.Add("X-firebase-app-name-hash", "R1dAH9Ui7M-ynoznwBdw01tLxhI") // Base64.encodeToString(sha1) may not changed
 	}
 
-	req, err := http.NewRequest("POST", RegisterUrl, strings.NewReader(values.Encode()))
+	req, err := http.NewRequest("POST", CommonRegisterUrl, strings.NewReader(values.Encode()))
 	if err != nil {
 		return "", err
 	}
@@ -106,6 +114,14 @@ func (f *FCMClient) SendGCMRegisterRequest() (string, error) {
 	req.Header.Add("Authorization", "AidLogin "+strconv.FormatUint(f.AndroidId, 10)+":"+strconv.FormatUint(f.SecurityToken, 10))
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Add("User-Agent", "")
+	if f.AndroidApp != nil {
+		// Add app-specific headers
+		req.Header.Set("app", f.AndroidApp.AndroidPackage)
+		req.Header.Set("gcm_ver", "253434035")
+		req.Header.Set("app_ver", f.AndroidApp.AppVer)
+		req.Header.Set("User-Agent", "com.google.android.gms/253434035 (Linux; U; Android 15; zh_CN_#Hans; Pixel 6; Build/AP4A.241205.013; Cronet/140.0.7289.0)")
+
+	}
 
 	resp, err := f.HttpClient.Do(req)
 	if err != nil {
@@ -146,7 +162,7 @@ func (f *FCMClient) SendFCMInstallRequest() (*FCMInstallationResponse, error) {
 	}
 
 	if f.AndroidApp != nil {
-		body["sdkVersion"] = "a:17.0.0"
+		body["sdkVersion"] = "a:17.2.0"
 	}
 
 	bodyBytes, err := json.Marshal(body)
@@ -164,23 +180,31 @@ func (f *FCMClient) SendFCMInstallRequest() (*FCMInstallationResponse, error) {
 
 	req.Header.Set("x-goog-api-key", f.ApiKey)
 
-	if f.AndroidApp == nil {
-		clientInfo := map[string]interface{}{
-			"heartbeats": []interface{}{},
-			"version":    2,
-		}
-		clientInfoBytes, err := json.Marshal(clientInfo)
-		if err != nil {
-			return nil, err
-		}
-		clientInfoBase64 := base64.StdEncoding.EncodeToString(clientInfoBytes)
-		req.Header.Set("x-firebase-client", clientInfoBase64)
-	} else {
+	clientInfo := map[string]interface{}{
+		"heartbeats": []interface{}{},
+		"version":    2,
+	}
+	clientInfoBytes, err := json.Marshal(clientInfo)
+	if err != nil {
+		return nil, err
+	}
+
+	var buf bytes.Buffer
+	gzipWriter := gzip.NewWriter(&buf)
+	if _, err := gzipWriter.Write(clientInfoBytes); err != nil {
+		return nil, err
+	}
+
+	if err := gzipWriter.Close(); err != nil {
+		return nil, err
+	}
+
+	clientInfoBase64 := base64.URLEncoding.EncodeToString(buf.Bytes())
+	req.Header.Set("x-firebase-client", clientInfoBase64)
+	if f.AndroidApp != nil {
 		req.Header.Set("X-Android-Package", f.AndroidApp.AndroidPackage)
 		req.Header.Set("X-Android-Cert", f.AndroidApp.AndroidPackageCert)
-		req.Header.Set("x-firebase-client", "android-min-sdk/23 fire-core/20.0.0 device-name/a21snnxx device-brand/samsung device-model/a21s android-installer/com.android.vending fire-android/30 fire-installations/17.0.0 fire-fcm/22.0.0 android-platform/ kotlin/1.9.23 android-target-sdk/34")
-		req.Header.Set("x-firebase-client-log-type", "3")
-		req.Header.Set("User-Agent", "Dalvik/2.1.0 (Linux; U; Android 11; SM-A217F Build/RP1A.200720.012)")
+		req.Header.Set("User-Agent", "Dalvik/2.1.0 (Linux; U; Android 15; Pixel 6 Build/AP4A.241205.013)")
 	}
 
 	resp, err := f.HttpClient.Do(req)

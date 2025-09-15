@@ -7,6 +7,8 @@ const RegisterUrl = "https://android.clients.google.com/c2dm/register3"
 
 const FirebaseInstallation = "https://firebaseinstallations.googleapis.com/v1/"
 const FirebaseRegistrationUrl = "https://fcmregistrations.googleapis.com/v1/"
+const Register3Url = "https://android.apis.google.com/c2dm/register3"
+
 const FcmEndpointUrl = "https://fcm.googleapis.com/fcm/send"
 
 const FcmSocketAddress = "mtalk.google.com:5228"
