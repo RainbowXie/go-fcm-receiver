@@ -1,4 +1,4 @@
-module github.com/morhaviv/go-fcm-receiver
+module github.com/RainbowXie/go-fcm-receiver
 
 go 1.21
 

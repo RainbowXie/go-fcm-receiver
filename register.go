@@ -9,7 +9,7 @@ import (
 func (f *FCMClient) Register() (string, string, uint64, uint64, error) {
 
 	if f.AppId == "" || f.ProjectID == "" || f.ApiKey == "" {
-		err := errors.New("FCMClient must receive an AppId, ProjectID, and ApiKey. read more at https://github.com/morhaviv/go-fcm-receiver/blob/main/README.md#api-deprecation")
+		err := errors.New("FCMClient must receive an AppId, ProjectID, and ApiKey. read more at https://github.com/RainbowXie/go-fcm-receiver/blob/main/README.md#api-deprecation")
 		return "", f.GcmToken, f.AndroidId, f.SecurityToken, err
 	}
 
