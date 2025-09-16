@@ -1,7 +1,6 @@
 package go_fcm_receiver
 
 import (
-	"bytes"
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/tls"
@@ -12,8 +11,6 @@ import (
 	"net/http"
 	"sync"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 // FCMClient structure
