@@ -13,6 +13,8 @@ func (f *FCMClient) Register() (string, string, uint64, uint64, error) {
 		return "", f.GcmToken, f.AndroidId, f.SecurityToken, err
 	}
 
+	f.setProxy()
+
 	err := f.registerFCM()
 	if err != nil {
 		return "", f.GcmToken, f.AndroidId, f.SecurityToken, err

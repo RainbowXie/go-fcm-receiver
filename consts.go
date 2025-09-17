@@ -11,7 +11,8 @@ const Register3Url = "https://android.apis.google.com/c2dm/register3"
 
 const FcmEndpointUrl = "https://fcm.googleapis.com/fcm/send"
 
-const FcmSocketAddress = "mtalk.google.com:5228"
+const FcmSocketUrl = "mtalk.google.com"
+const FcmSocketAddress = FcmSocketUrl+":5228"
 
 const DefaultFcmMessageTtl = time.Hour * 24 * 28
 
