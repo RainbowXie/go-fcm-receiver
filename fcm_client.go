@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
+	"golang.org/x/net/proxy"
 )
 
 // FCMClient structure
@@ -20,6 +22,7 @@ type FCMClient struct {
 	AppId                 string
 	ProjectID             string
 	HttpClient            http.Client
+	ProxyURL              string
 	GcmToken              string
 	FcmToken              string
 	AndroidId             uint64
@@ -109,7 +112,26 @@ func (f *FCMClient) StartListening() error {
 }
 
 func (f *FCMClient) connect() error {
+    var dialer proxy.Dialer = proxy.Direct
+    if f.ProxyURL != "" {
+        proxyURL, err := url.Parse(f.ProxyURL)
+        if err != nil {
+            return err
+        }
+        dialer, err = proxy.FromURL(proxyURL, proxy.Direct)
+        if err != nil {
+            return fmt.Errorf("failed to create proxy dialer: %v", err)
+        }
+    }
+
+	conn, err := dialer.Dial("tcp", FcmSocketAddress)
+	if err != nil {
+		err = errors.New(fmt.Sprintf("failed to connect to the FCM server: %s", err.Error()))
+		return err
+	}
+
 	tlsConfig := &tls.Config{
+        ServerName: FcmSocketUrl,
 		GetConfigForClient: func(c *tls.ClientHelloInfo) (*tls.Config, error) {
 			err := c.Conn.(*net.TCPConn).SetKeepAlive(true)
 			if err != nil {
@@ -120,11 +142,13 @@ func (f *FCMClient) connect() error {
 		},
 	}
 
-	socket, err := tls.Dial("tcp", FcmSocketAddress, tlsConfig)
-	if err != nil {
-		err = errors.New(fmt.Sprintf("failed to connect to the FCM server: %s", err.Error()))
-		return err
-	}
+	socket := tls.Client(conn, tlsConfig)
+
+    err = socket.Handshake()
+    if err != nil {
+        conn.Close()
+        return fmt.Errorf("TLS handshake failed: %v", err)
+    }
 
 	f.socket.IsAlive = true
 	f.socket.Socket = socket
@@ -236,4 +260,46 @@ func (f *FCMClient) onDataMessage(message *DataMessageStanza) error {
 
 func (f *FCMClient) Close() {
 	f.socket.close(errors.New("close was manually called"))
+}
+
+func (f* FCMClient) setProxy() error {
+    if f.ProxyURL == "" {
+        f.HttpClient.Transport = &http.Transport{}
+        return nil
+    }
+
+    parsedURL, err := url.Parse(f.ProxyURL)
+    if err != nil {
+        return err
+    }
+
+    switch parsedURL.Scheme {
+    case "http", "https":
+        f.HttpClient.Transport = &http.Transport {
+            Proxy: http.ProxyURL(parsedURL),
+        }
+    case "socks5":
+        var auth *proxy.Auth
+        if parsedURL.User != nil {
+            auth = &proxy.Auth {
+                User: parsedURL.User.Username(),
+            }
+            if password, ok := parsedURL.User.Password(); ok {
+                auth.Password = password
+            }
+        }
+
+        dialer, err := proxy.SOCKS5("tcp", parsedURL.Host, auth, proxy.Direct)
+        if err != nil {
+            return err
+        }
+
+        f.HttpClient.Transport = &http.Transport {
+            Dial: dialer.Dial,
+        }
+    default:
+        return fmt.Errorf("unsupported proxy scheme: %s", parsedURL.Scheme)
+    }
+
+    return nil
 }
