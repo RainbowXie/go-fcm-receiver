@@ -27,21 +27,58 @@ type FCMSocketHandler struct {
 	socketContextCancel context.CancelFunc
 	onDataMutex         sync.Mutex
 	OnMessage           func(messageTag int, messageObject interface{}) error
+	// New fields for improved lifecycle management
+	contextMutex        sync.RWMutex
+	goroutinesWg        sync.WaitGroup
+	isClosing           bool
+	closingMutex        sync.RWMutex
+	initMutex           sync.Mutex  // Protect Init() method from concurrent calls
 }
 
 func (f *FCMSocketHandler) StartSocketHandler() error {
+	f.contextMutex.Lock()
 	f.socketContext, f.socketContextCancel = context.WithCancel(context.Background())
+	f.contextMutex.Unlock()
+
+	f.closingMutex.Lock()
+	f.isClosing = false
+	f.closingMutex.Unlock()
+
+	f.errChan = make(chan error)
+
+	// Start goroutines with proper lifecycle management
+	f.goroutinesWg.Add(2)
 	go f.readData()
 	go f.sendHeartbeatPings()
-	f.errChan = make(chan error)
+
 	return <-f.errChan
 }
 
 func (f *FCMSocketHandler) sendHeartbeatPings() {
+	defer f.goroutinesWg.Done()
+
 	if f.HeartbeatInterval == 0 {
 		f.HeartbeatInterval = time.Minute * 10
 	}
+
 	for {
+		// Check if we're closing
+		f.closingMutex.RLock()
+		isClosing := f.isClosing
+		f.closingMutex.RUnlock()
+		if isClosing {
+			return
+		}
+
+		// Get context safely
+		f.contextMutex.RLock()
+		ctx := f.socketContext
+		f.contextMutex.RUnlock()
+
+		if ctx == nil {
+			return
+		}
+
 		select {
 		case <-time.After(f.HeartbeatInterval):
 			err := f.SendHeartbeatPing()
@@ -49,10 +86,9 @@ func (f *FCMSocketHandler) sendHeartbeatPings() {
 				f.close(err)
 				return
 			}
-		case <-f.socketContext.Done():
+		case <-ctx.Done():
 			return
 		}
-
 	}
 }
 
@@ -72,14 +108,40 @@ func (f *FCMSocketHandler) SendHeartbeatPing() error {
 }
 
 func (f *FCMSocketHandler) readData() {
+	defer f.goroutinesWg.Done()
+
 	for {
+		// Check if we're closing
+		f.closingMutex.RLock()
+		isClosing := f.isClosing
+		f.closingMutex.RUnlock()
+		if isClosing {
+			return
+		}
+
+		// Check if socket is nil before attempting to read
+		if f.Socket == nil {
+			f.close(errors.New("socket is nil"))
+			return
+		}
+
+		// Get context safely
+		f.contextMutex.RLock()
+		ctx := f.socketContext
+		f.contextMutex.RUnlock()
+
+		if ctx == nil {
+			f.close(errors.New("context is nil"))
+			return
+		}
+
 		var buffer []byte
 		buffer = make([]byte, 1024*32)
 		n, err := f.Socket.Read(buffer)
 		if err != nil {
 			err = errors.New(fmt.Sprintf("failed to read from the FCM socket: %s", err.Error()))
 			select {
-			case <-f.socketContext.Done():
+			case <-ctx.Done():
 				return
 			default:
 				f.close(err)
@@ -378,6 +440,35 @@ func (f *FCMSocketHandler) buildProtobufFromTag(buffer []byte) (interface{}, err
 }
 
 func (f *FCMSocketHandler) Init() {
+	// Protect from concurrent Init calls
+	f.initMutex.Lock()
+	defer f.initMutex.Unlock()
+
+	// Wait for any existing goroutines to finish
+	f.closingMutex.Lock()
+	f.isClosing = true
+	f.closingMutex.Unlock()
+
+	// Cancel existing context if it exists
+	f.contextMutex.Lock()
+	if f.socketContextCancel != nil {
+		f.socketContextCancel()
+	}
+	f.contextMutex.Unlock()
+
+	// Wait for all goroutines to finish
+	f.goroutinesWg.Wait()
+
+	// Reset all fields safely
+	f.contextMutex.Lock()
+	f.socketContext = nil
+	f.socketContextCancel = nil
+	f.contextMutex.Unlock()
+
+	f.closingMutex.Lock()
+	f.isClosing = false
+	f.closingMutex.Unlock()
+
 	f.state = MCS_VERSION_TAG_AND_SIZE
 	f.dataMutex.Lock()
 	f.data = []byte{}
@@ -387,23 +478,51 @@ func (f *FCMSocketHandler) Init() {
 	f.messageSize = 0
 	f.handshakeComplete = false
 	f.isWaitingForData = true
-	f.socketContext = nil
-	f.socketContextCancel = nil
 }
 
 func (f *FCMSocketHandler) close(err error) {
+	// Set closing flag to signal all goroutines to stop
+	f.closingMutex.Lock()
+	if f.isClosing {
+		f.closingMutex.Unlock()
+		return // Already closing, avoid duplicate close
+	}
+	f.isClosing = true
+	f.closingMutex.Unlock()
+
+	// Cancel context to signal goroutines
+	f.contextMutex.Lock()
 	if f.socketContextCancel != nil {
 		f.socketContextCancel()
 	}
+	f.contextMutex.Unlock()
+
+	// Close socket
 	if f.Socket != nil {
 		f.Socket.Close()
 	}
+
+	// Mark as not alive
 	f.IsAlive = false
+
+	// Send error to channel if possible
 	if f.errChan != nil {
 		select {
 		case f.errChan <- err:
 		default:
 		}
 	}
-	f.Init()
+
+	// Wait for goroutines to finish
+	f.goroutinesWg.Wait()
+
+	// Reset state without calling Init() to avoid recursion
+	f.contextMutex.Lock()
+	f.socketContext = nil
+	f.socketContextCancel = nil
+	f.contextMutex.Unlock()
+
+	f.closingMutex.Lock()
+	f.isClosing = false
+	f.closingMutex.Unlock()
 }
