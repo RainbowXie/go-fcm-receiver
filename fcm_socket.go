@@ -387,17 +387,23 @@ func (f *FCMSocketHandler) Init() {
 	f.messageSize = 0
 	f.handshakeComplete = false
 	f.isWaitingForData = true
+	f.socketContext = nil
+	f.socketContextCancel = nil
 }
 
 func (f *FCMSocketHandler) close(err error) {
-	f.socketContextCancel()
+	if f.socketContextCancel != nil {
+		f.socketContextCancel()
+	}
 	if f.Socket != nil {
 		f.Socket.Close()
 	}
 	f.IsAlive = false
-	select {
-	case f.errChan <- err:
-	default:
+	if f.errChan != nil {
+		select {
+		case f.errChan <- err:
+		default:
+		}
 	}
 	f.Init()
 }
