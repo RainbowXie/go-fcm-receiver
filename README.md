@@ -18,7 +18,7 @@ New version is now avaliable using the new FCM API! (as of June 2024)
 ## Install
 
 `
-import "github.com/morhaviv/go-fcm-receiver"
+import "github.com/RainbowXie/go-fcm-receiver"
 `
 
 ## Requirements
@@ -92,4 +92,4 @@ func main() {
 }
 ```
 ### Android Apk Fcm Message Usage
-see [go_fcm_receiver_example_usage](./go_fcm_receiver_example_usage.go)
+see [go_fcm_receiver_example_test](go_fcm_receiver_example_test.go)
