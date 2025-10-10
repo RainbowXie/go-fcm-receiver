@@ -32,7 +32,7 @@ import "github.com/morhaviv/go-fcm-receiver"
 package main
 
 import (
-	go_fcm_receiver "github.com/rainbowxie/go-fcm-receiver"
+	go_fcm_receiver "github.com/RainbowXie/go-fcm-receiver"
 )
 
 func main() {
@@ -66,7 +66,7 @@ func main() {
 package main
 
 import (
-	go_fcm_receiver "github.com/rainbowxie/go-fcm-receiver"
+	go_fcm_receiver "github.com/RainbowXie/go-fcm-receiver"
 )
 
 func main() {
@@ -91,3 +91,5 @@ func main() {
 	}
 }
 ```
+### Android Apk Fcm Message Usage
+see [go_fcm_receiver_example_usage](./go_fcm_receiver_example_usage.go)
