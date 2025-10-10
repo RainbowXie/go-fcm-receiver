@@ -7,7 +7,7 @@ The library was inspired by [push-receiver](https://www.npmjs.com/package/push-r
 ## The difference between this library and other libraries
 
 - This library receives FCM notifications the same way an Android device does. This library is an FCM client.
-- Other libraries (such as go-fcm) sends notifications via fcm, and does not receive notifications. Those libraries are an FCM server-side.  
+- Other libraries (such as go-fcm) sends notifications via fcm, and does not receive notifications. Those libraries are an FCM server-side.
 
 ## API Deprecation
 New version is now avaliable using the new FCM API! (as of June 2024)
@@ -32,7 +32,7 @@ import "github.com/morhaviv/go-fcm-receiver"
 package main
 
 import (
-	go_fcm_receiver "github.com/morhaviv/go-fcm-receiver"
+	go_fcm_receiver "github.com/rainbowxie/go-fcm-receiver"
 )
 
 func main() {
@@ -66,7 +66,7 @@ func main() {
 package main
 
 import (
-	go_fcm_receiver "github.com/morhaviv/go-fcm-receiver"
+	go_fcm_receiver "github.com/rainbowxie/go-fcm-receiver"
 )
 
 func main() {
@@ -79,12 +79,12 @@ func main() {
 			fmt.Println("Received a message:", string(message))
 		},
 	}
-	
+
 	err := oldDevice.LoadKeys("<PRIVATE_KEY_BASE64>", "<AUTH_SECRET_BASE64>")
 	if err != nil {
 		panic(err)
 	}
-	
+
 	err = oldDevice.StartListening()
 	if err != nil {
 		panic(err)
