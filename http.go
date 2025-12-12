@@ -3,16 +3,18 @@ package go_fcm_receiver
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/sha1"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/golang/protobuf/proto"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+
+	"google.golang.org/protobuf/proto"
 )
 
 type FCMSubscribeResponse struct {
@@ -103,7 +105,7 @@ func (f *FCMClient) SendGCMRegisterRequest() (string, error) {
 		values.Add("target_ver", "35")
 		values.Add("sender", f.AndroidApp.GcmSenderId)
 		values.Add("plat", "0")
-		values.Add("X-firebase-app-name-hash", "R1dAH9Ui7M-ynoznwBdw01tLxhI") // Base64.encodeToString(sha1) may not changed
+		values.Add("X-firebase-app-name-hash", base64.StdEncoding.EncodeToString(sha1.New().Sum([]byte(f.AndroidApp.AndroidPackage)))) // Base64.encodeToString(sha1) may not changed
 	}
 
 	req, err := http.NewRequest("POST", CommonRegisterUrl, strings.NewReader(values.Encode()))
@@ -119,8 +121,7 @@ func (f *FCMClient) SendGCMRegisterRequest() (string, error) {
 		req.Header.Set("app", f.AndroidApp.AndroidPackage)
 		req.Header.Set("gcm_ver", "253434035")
 		req.Header.Set("app_ver", f.AndroidApp.AppVer)
-		req.Header.Set("User-Agent", "com.google.android.gms/253434035 (Linux; U; Android 15; zh_CN_#Hans; Pixel 6; Build/AP4A.241205.013; Cronet/140.0.7289.0)")
-
+		req.Header.Set("User-Agent", fmt.Sprintf("com.google.android.gms/253434035 (Linux; U; Android %d; zh_CN_#Hans; %s; Build/%s; Cronet/140.0.7289.0)", DefaultIfZero(f.AndroidApp.AndroidVersion, 15), DefaultIfZero(f.AndroidApp.DeviceModel, "Pixel 6"), DefaultIfZero(f.AndroidApp.AndroidBuild, "AP4A.241205.013")))
 	}
 
 	resp, err := f.HttpClient.Do(req)
@@ -177,8 +178,10 @@ func (f *FCMClient) SendFCMInstallRequest() (*FCMInstallationResponse, error) {
 
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
-
-	req.Header.Set("x-goog-api-key", f.ApiKey)
+	req.Header["x-goog-api-key"] = []string{f.ApiKey}
+	req.Header["Connection"] = []string{"keep-alive"}
+	req.Header["Content-Encoding"] = []string{"gzip"}
+	req.Header["Cache-Control"] = []string{"no-cache"}
 
 	clientInfo := map[string]interface{}{
 		"heartbeats": []interface{}{},
@@ -204,7 +207,7 @@ func (f *FCMClient) SendFCMInstallRequest() (*FCMInstallationResponse, error) {
 	if f.AndroidApp != nil {
 		req.Header.Set("X-Android-Package", f.AndroidApp.AndroidPackage)
 		req.Header.Set("X-Android-Cert", f.AndroidApp.AndroidPackageCert)
-		req.Header.Set("User-Agent", "Dalvik/2.1.0 (Linux; U; Android 15; Pixel 6 Build/AP4A.241205.013)")
+		req.Header.Set("User-Agent", fmt.Sprintf("Dalvik/2.1.0 (Linux; U; Android %d; %s Build/%s)", DefaultIfZero(f.AndroidApp.AndroidVersion, 15), DefaultIfZero(f.AndroidApp.DeviceModel, "Pixel 6"), DefaultIfZero(f.AndroidApp.AndroidBuild, "AP4A.241205.013")))
 	}
 
 	resp, err := f.HttpClient.Do(req)
@@ -279,4 +282,12 @@ func (f *FCMClient) SendFCMRegisterRequest() (*FCMRegisterResponse, error) {
 	}
 
 	return &response, nil
+}
+
+func DefaultIfZero[T comparable](value T, defaultValue T) T {
+	var zero T
+	if value == zero {
+		return defaultValue
+	}
+	return value
 }
